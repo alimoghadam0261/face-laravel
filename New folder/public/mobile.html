@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Smart Glass — دوربین گوشی</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0f; color: #e5e5ea; min-height: 100vh;
+    font-family: 'Segoe UI', Tahoma, system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 16px;
+  }
+  h1 { font-size: 18px; margin-bottom: 4px; }
+  .sub { color: #8a8a96; font-size: 12px; margin-bottom: 14px; text-align: center; }
+  .video-wrap {
+    position: relative; width: 100%; max-width: 480px; aspect-ratio: 4/3;
+    background: #000; border-radius: 14px; overflow: hidden;
+    border: 1px solid #26262e; box-shadow: 0 0 24px rgba(16,185,129,.12);
+  }
+  canvas { width: 100%; height: 100%; display: block; background: #000; }
+  .badge {
+    position: absolute; top: 10px; right: 10px; padding: 4px 10px; border-radius: 999px;
+    font-size: 11px; background: rgba(10,10,15,.65); border: 1px solid #3d3d4a; z-index: 2;
+  }
+  .badge.ok { color: #34d399; border-color: rgba(16,185,129,.5); }
+  .badge.bad { color: #f87171; }
+  .faces-badge {
+    position: absolute; top: 10px; left: 10px; padding: 4px 10px; border-radius: 999px;
+    font-size: 11px; background: rgba(10,10,15,.65); border: 1px solid #3d3d4a;
+    color: #93c5fd; z-index: 2;
+  }
+  .status { margin: 12px 0 6px; font-size: 13px; color: #9ca3af; text-align: center; min-height: 18px; }
+  .status b { color: #e5e5ea; }
+  .row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
+  button {
+    padding: 12px 20px; border-radius: 12px; border: 1px solid #2d2d3a;
+    background: #17171e; color: #e5e5ea; font-size: 15px; font-family: inherit;
+  }
+  button:active { transform: scale(.97); }
+  button.primary { background: #059669; border-color: #059669; color: #fff; font-weight: 600; }
+  button.stop { background: #7f1d1d; border-color: #b91c1c; color: #fee2e2; }
+  button[disabled] { opacity: .45; }
+  .cam-toggle { display: flex; border: 1px solid #2d2d3a; border-radius: 12px; overflow: hidden; margin-top: 12px; }
+  .cam-toggle button { border: 0; border-radius: 0; background: transparent; padding: 12px 18px; }
+  .cam-toggle button.active { background: #059669; color: #fff; font-weight: 600; }
+  .recognized { width: 100%; max-width: 480px; margin-top: 16px; }
+  .recognized h2 { font-size: 13px; color: #9ca3af; margin-bottom: 8px; }
+  .rec-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    background: #14141b; border: 1px solid #26262e; border-radius: 10px; margin-bottom: 6px;
+  }
+  .rec-item .avatar {
+    width: 34px; height: 34px; border-radius: 999px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: #fff; background: #0284c7;
+  }
+  .rec-item.vip .avatar { background: #ca8a04; color: #000; }
+  .rec-item.employee .avatar { background: #059669; }
+  .rec-item .who { flex: 1; min-width: 0; }
+  .rec-item .who .name { font-size: 14px; font-weight: 600; color: #e5e5ea; }
+  .rec-item .who .code { font-size: 11px; color: #6b7280; font-family: monospace; }
+  .rec-item .sim { font-size: 12px; color: #34d399; font-weight: 600; }
+  .empty-rec { text-align: center; color: #4b5563; font-size: 12px; padding: 14px; }
+  .err { color: #f87171; font-size: 12.5px; margin-top: 8px; text-align: center; max-width: 460px; line-height: 1.8; }
+  .insecure {
+    display: none; margin: 10px 0; max-width: 480px; width: 100%;
+    background: #451a03; border: 1px solid #b45309; border-radius: 12px;
+    padding: 12px 14px; font-size: 12.5px; color: #fcd34d; line-height: 2;
+  }
+  .insecure code { direction: ltr; unicode-bidi: embed; color: #fde68a; background: rgba(0,0,0,.35); padding: 1px 6px; border-radius: 6px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+  <h1>دوربین گوشی — Smart Glass</h1>
+  <p class="sub">کادر و اطلاعات افراد، مستقیماً روی تصویر دوربین گوشی رسم می‌شود</p>
+
+  <div class="video-wrap" id="videoWrap">
+    <canvas id="cv"></canvas>
+    <span id="badge" class="badge">غیرفعال</span>
+    <span id="facesBadge" class="faces-badge" style="display:none">👤 0</span>
+  </div>
+
+  <p class="status" id="status">دوربین را روشن کنید</p>
+
+  <div class="cam-toggle">
+    <button id="btnFront" class="active" onclick="pickCam('front')">🤳 دوربین جلو (سلفی)</button>
+    <button id="btnBack" onclick="pickCam('back')">📷 دوربین عقب</button>
+  </div>
+
+  <div class="row">
+    <button id="btnStart" class="primary" onclick="start()">روشن کردن</button>
+    <button id="btnStop" class="stop" onclick="stopAll()" disabled>توقف</button>
+  </div>
+
+  <div class="recognized">
+    <h2>افراد شناسایی‌شده (زنده)</h2>
+    <div id="recList"><p class="empty-rec">هنوز کسی شناسایی نشده</p></div>
+  </div>
+
+  <p class="err" id="err"></p>
+
+  <div class="insecure" id="insecure">
+    ⚠️ مرورگر فقط روی HTTPS اجازه دوربین می‌دهد.
+    <b>آیفون/سافاری:</b> این آدرس را باز کنید:
+    <code>https://172.20.10.3:8443/mobile.html</code> — هشدار گواهی را بپذیرید
+    (Details ← visit this website). فقط بار اول است.
+    <b>اندروید/کروم:</b> در <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>
+    آدرس <code id="originHint"></code> را اضافه و Enabled کنید، سپس Relaunch.
+  </div>
+
+<script>
+(function () {
+  // HTTPS page (https_phone.py): same-origin relative URLs -> server proxies
+  // /api/* to the engine (avoids mixed-content blocking on iOS Safari).
+  var PC = location.protocol === 'https:' ? ''
+    : (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+    ? 'http://127.0.0.1:8003' : ('http://' + location.hostname + ':8003');
+
+  if (!window.isSecureContext) {
+    document.getElementById('insecure').style.display = 'block';
+    document.getElementById('originHint').textContent = location.origin;
+  }
+
+  var video = document.createElement('video');   // offscreen source element
+  video.setAttribute('autoplay', ''); video.setAttribute('playsinline', ''); video.muted = true;
+  var wrap = document.getElementById('videoWrap');
+  var cv = document.getElementById('cv');
+  var cx = cv.getContext('2d');
+  var badge = document.getElementById('badge');
+  var facesBadge = document.getElementById('facesBadge');
+  var statusEl = document.getElementById('status');
+  var errEl = document.getElementById('err');
+  var recList = document.getElementById('recList');
+  var btnStart = document.getElementById('btnStart');
+  var btnStop = document.getElementById('btnStop');
+  var btnFront = document.getElementById('btnFront');
+  var btnBack = document.getElementById('btnBack');
+
+  var stream = null, facing = 'front', sending = false, timer = null;
+  var pollTimer = null, frames = 0, tracks = [], drawing = false;
+
+  // Smoothed tracking state: track_id -> {cx,cy,hw,hh,vx,vy,seen,info,disp}
+  // The box is EXTRAPOLATED with the person's velocity between polls so it
+  // follows fast movement instead of jumping every 100ms.
+  var smooth = {}, lastPollTs = 0, pollBusy = false;
+
+  // getUserMedia facingMode values are 'user' (front) / 'environment' (back)
+  var FACING_MODE = { front: 'user', back: 'environment' };
+  var CAT_COLORS = { vip: '#facc15', employee: '#34d399', guest: '#60a5fa', unknown: '#f87171' };
+  // The engine resizes pushes letterboxed into 640x480 (aspect kept) and
+  // reports the processed size via /api/camera/status (proc_size) - map
+  // boxes back through the real processed size.
+  var ENGINE_W = 640, ENGINE_H = 480, procW = 640, procH = 480;
+
+  function setBadge(ok, text) {
+    badge.textContent = text;
+    badge.className = 'badge ' + (ok ? 'ok' : 'bad');
+  }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  async function openCamera(f) {
+    var attempts = [
+      { video: { facingMode: { exact: FACING_MODE[f] }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
+      { video: { facingMode: { ideal: FACING_MODE[f] }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
+      { video: true, audio: false }
+    ];
+    var lastErr = null;
+    for (var i = 0; i < attempts.length; i++) {
+      try { return await navigator.mediaDevices.getUserMedia(attempts[i]); }
+      catch (e) { lastErr = e; }
+    }
+    throw lastErr;
+  }
+
+  async function pickCam(f) {
+    if (f === facing && stream) return;
+    facing = f;
+    btnFront.classList.toggle('active', f === 'front');
+    btnBack.classList.toggle('active', f === 'back');
+    if (stream) {
+      stopLocalVideo();
+      statusEl.textContent = 'تعویض دوربین…';
+      await sleep(450);
+      if (sending) await start();
+    }
+  }
+
+  function stopLocalVideo() {
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    video.srcObject = null;
+  }
+
+  async function start() {
+    errEl.textContent = '';
+    btnStart.disabled = true;
+    try {
+      statusEl.textContent = 'درخواست دسترسی دوربین…';
+      stream = await openCamera(facing);
+      video.srcObject = stream;
+      await video.play().catch(function () {});
+
+      // Fit the canvas (and its box) to the real camera aspect so nothing is cropped
+      await new Promise(function (res) {
+        if (video.videoWidth) return res();
+        video.onloadedmetadata = res;
+      });
+      cv.width = video.videoWidth || 640;
+      cv.height = video.videoHeight || 480;
+      wrap.style.aspectRatio = cv.width + ' / ' + cv.height;
+
+      // Tell the engine to switch to push mode for this facing
+      var r = await fetch(PC + '/api/camera/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ camera_id: 0, push_mode: true, facing: facing })
+      });
+      if (!r.ok) throw new Error('camera/start: HTTP ' + r.status);
+
+      sending = true; frames = 0;
+      timer = setInterval(pushOnce, 80);   // ~12 fps to the engine
+      btnStop.disabled = false;
+      setBadge(true, 'در حال ارسال');
+      statusEl.innerHTML = 'دوربین <b>' + (facing === 'front' ? 'جلو' : 'عقب') +
+        '</b> فعال — کادر و مشخصات روی تصویر رسم می‌شود';
+
+      if (!drawing) { drawing = true; requestAnimationFrame(drawLoop); }
+      startPolling();
+    } catch (e) {
+      var name = (e && e.name) ? e.name : 'Error';
+      errEl.textContent = 'خطا [' + name + ']: ' + (e.message || e);
+      if (name === 'NotAllowedError') errEl.textContent += ' — دسترسی دوربین در تنظیمات سافاری رد شده است.';
+      if (name === 'NotFoundError') errEl.textContent += ' — دوربین یافت نشد.';
+      statusEl.textContent = 'شکست در شروع';
+      btnStart.disabled = false;
+      setBadge(false, 'خطا');
+    }
+  }
+
+  async function pushOnce() {
+    if (!sending || !video.videoWidth) return;
+    var w = Math.min(640, video.videoWidth), h = Math.round(w * video.videoHeight / video.videoWidth);
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var g = c.getContext('2d');
+    // NOTE: the raw getUserMedia stream is already correct (mirroring is only
+    // a CSS display effect). Mirroring AGAIN here corrupted recognition:
+    // the engine saw a flipped face (similarity 0.02-0.18 => everyone "unknown"
+    // or one shared name). Send the true image.
+    g.drawImage(video, 0, 0, w, h);
+    var blob = await new Promise(function (res) { c.toBlob(res, 'image/jpeg', 0.72); });
+    if (!blob) return;
+    try {
+      var r = await fetch(PC + '/api/frame', { method: 'POST', body: blob });
+      if (r.ok) { frames++; setBadge(true, 'ارسال: ' + frames + ' فریم'); }
+      else if (r.status === 409) {
+        await fetch(PC + '/api/camera/start', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ camera_id: 0, push_mode: true, facing: facing })
+        });
+      } else { setBadge(false, 'خطای ارسال ' + r.status); }
+    } catch (e) { setBadge(false, 'قطع ارتباط با PC'); }
+  }
+
+  // ---- overlay drawing: box around each face + info beside it ----------
+  function roundRect(x, y, w, h, r) {
+    cx.beginPath();
+    cx.moveTo(x + r, y);
+    cx.arcTo(x + w, y, x + w, y + h, r);
+    cx.arcTo(x + w, y + h, x, y + h, r);
+    cx.arcTo(x, y + h, x, y, r);
+    cx.arcTo(x, y, x + w, y, r);
+    cx.closePath();
+  }
+
+  function drawLoop() {
+    if (!drawing) return;
+    requestAnimationFrame(drawLoop);
+
+    if (!video.videoWidth) return;
+    var W = cv.width, H = cv.height;
+
+    cx.save();
+    if (facing === 'front') { cx.translate(W, 0); cx.scale(-1, 1); }  // selfie view
+    cx.drawImage(video, 0, 0, W, H);
+    cx.restore();
+
+    // HUD like the webcam view
+    cx.font = 'bold 16px Segoe UI, Tahoma, sans-serif';
+    cx.fillStyle = 'rgba(10,10,15,.55)';
+    roundRect(10, 10, 118, 30, 8); cx.fill();
+    cx.fillStyle = '#34d399';
+    cx.textAlign = 'left'; cx.textBaseline = 'middle';
+    cx.fillText('SMART GLASS', 22, 26);
+
+    var nowTs = performance.now();
+    for (var id in smooth) {
+      var s = smooth[id], t = s.info;
+      // extrapolate the box with the person's velocity since the last poll
+      var dtDraw = (nowTs - lastPollTs) / 1000;
+      // Extrapolate with velocity, CAPPED at half the last poll interval:
+      // if polling hiccups, boxes extrapolate at most ~50ms ahead instead of
+      // flying off the face (cap = anti-runaway guard).
+      var dtDraw = Math.min(0.075, (nowTs - lastPollTs) / 1000);
+      var ecx = s.cx + s.vx * dtDraw;
+      var ecy = s.cy + s.vy * dtDraw;
+      // engine (procW x procH, aspect-preserving resize of the pushed frame)
+      // -> canvas space. Canvas and pushed frame share the camera aspect, so
+      // scale = canvasWidth / procWidth exactly (no letterbox offset needed).
+      var sx = W / procW, sy = H / procH;
+      var x1 = (ecx - s.hw) * sx, y1 = (ecy - s.hh) * sy;
+      var x2 = (ecx + s.hw) * sx, y2 = (ecy + s.hh) * sy;
+      if (facing === 'front') {                 // mirror x to match selfie view
+        var nx1 = W - x2, nx2 = W - x1;
+        x1 = nx1; x2 = nx2;
+      }
+      var color = CAT_COLORS[t.category] || CAT_COLORS.unknown;
+
+      cx.strokeStyle = color;
+      cx.lineWidth = 3;
+      cx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+      // info card beside the box (like the webcam overlay)
+      var lines = [];
+      if (t.full_name) {
+        lines.push(t.full_name);
+        if (t.national_code) lines.push('کد ملی: ' + t.national_code);
+        if (t.similarity) lines.push('مشابهت: ' + Math.round(t.similarity * 100) + '%');
+      } else {
+        lines.push('ناشناس');
+      }
+
+      cx.font = 'bold 15px Segoe UI, Tahoma, sans-serif';
+      var tw = 0;
+      for (var j = 0; j < lines.length; j++) tw = Math.max(tw, cx.measureText(lines[j]).width);
+      if (lines.length > 1) { cx.font = '12px Segoe UI, Tahoma, sans-serif'; for (j = 1; j < lines.length; j++) tw = Math.max(tw, cx.measureText(lines[j]).width); }
+
+      var pad = 8, lineH = (lines.length > 1 ? 26 : 24);
+      var bw = tw + pad * 2, bh = lines.length * lineH + pad * 2 - 4;
+      // prefer the side with more free space
+      var bx = (x2 + bw + 6 < W) ? x2 + 6 : Math.max(6, x1 - bw - 6);
+      var by = Math.max(6, Math.min(y1, H - bh - 6));
+
+      cx.fillStyle = 'rgba(10,10,15,.78)';
+      roundRect(bx, by, bw, bh, 8); cx.fill();
+      cx.strokeStyle = color; cx.lineWidth = 1.5;
+      roundRect(bx, by, bw, bh, 8); cx.stroke();
+
+      cx.textAlign = 'right';
+      for (j = 0; j < lines.length; j++) {
+        var yy = by + pad + lineH * j + lineH / 2 - 2;
+        if (j === 0) {
+          cx.font = 'bold 15px Segoe UI, Tahoma, sans-serif';
+          cx.fillStyle = '#f3f4f6';
+        } else {
+          cx.font = '12px Segoe UI, Tahoma, sans-serif';
+          cx.fillStyle = j === lines.length - 1 && t.similarity ? '#34d399' : '#9ca3af';
+        }
+        cx.fillText(lines[j], bx + bw - pad, yy);
+      }
+      cx.textAlign = 'left';
+    }
+  }
+
+  // ---- tracks polling ----------------------------------------------------
+  function startPolling() {
+    facesBadge.style.display = 'inline-block';
+    if (pollTimer) clearInterval(pollTimer);
+    pollTracks(); pollTimer = setInterval(pollTracks, 100);   // 10 Hz
+  }
+
+  function updateSmooth() {
+    var now = performance.now();
+    var dt = lastPollTs ? Math.min(0.5, (now - lastPollTs) / 1000) : 0.1;
+    lastPollTs = now;
+    var seen = {};
+    for (var i = 0; i < tracks.length; i++) {
+      var t = tracks[i], b = t.bbox;
+      seen[t.track_id] = 1;
+      var cx_ = (b[0] + b[2]) / 2, cy_ = (b[1] + b[3]) / 2;
+      var hw = (b[2] - b[0]) / 2, hh = (b[3] - b[1]) / 2;
+      var s = smooth[t.track_id];
+      if (!s) {
+        smooth[t.track_id] = { cx: cx_, cy: cy_, hw: hw, hh: hh, vx: 0, vy: 0, seen: now, info: t, disp: null };
+        continue;
+      }
+      if (dt > 0) {   // smoothed per-axis velocity (engine px/s)
+        s.vx = 0.6 * s.vx + 0.4 * (cx_ - s.cx) / dt;
+        s.vy = 0.6 * s.vy + 0.4 * (cy_ - s.cy) / dt;
+      }
+      s.cx = cx_; s.cy = cy_; s.hw = hw; s.hh = hh;
+      s.seen = now; s.info = t;
+    }
+    for (var id in smooth) {
+      if (!seen[id] && now - smooth[id].seen > 350) delete smooth[id];
+    }
+  }
+
+  async function pollTracks() {
+    if (pollBusy) return;
+    pollBusy = true;
+    try {
+      var r = await fetch(PC + '/api/tracks');
+      if (!r.ok) return;
+      var data = await r.json();
+      tracks = data.tracks || [];
+      if (data.proc_size) { procW = data.proc_size[0]; procH = data.proc_size[1]; }
+      updateSmooth();
+      facesBadge.textContent = '👤 ' + (data.count || 0) + ' چهره';
+
+      if (!tracks.length) {
+        recList.innerHTML = '<p class="empty-rec">هنوز کسی شناسایی نشده</p>';
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < tracks.length; i++) {
+        var t = tracks[i], cat = t.category || 'guest';
+        var name = t.full_name || 'ناشناس';
+        var sim = t.similarity ? Math.round(t.similarity * 100) + '%' : '';
+        html += '<div class="rec-item ' + cat + '">' +
+          '<div class="avatar">' + name.charAt(0) + '</div>' +
+          '<div class="who"><div class="name">' + name + '</div>' +
+          '<div class="code">' + (t.national_code || '—') + '</div></div>' +
+          '<div class="sim">' + sim + '</div></div>';
+      }
+      recList.innerHTML = html;
+    } catch (e) { /* transient */ }
+    finally { pollBusy = false; }
+  }
+
+  async function stopAll(silent) {
+    sending = false;
+    drawing = false;
+    if (timer) { clearInterval(timer); timer = null; }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    stopLocalVideo();
+    tracks = []; smooth = {}; lastPollTs = 0;
+    cx.clearRect(0, 0, cv.width, cv.height);
+    facesBadge.style.display = 'none';
+    btnStop.disabled = true;
+    btnStart.disabled = false;
+    setBadge(false, 'غیرفعال');
+    statusEl.textContent = 'متوقف شد';
+    recList.innerHTML = '<p class="empty-rec">هنوز کسی شناسایی نشده</p>';
+    if (!silent) {
+      try { await fetch(PC + '/api/camera/stop', { method: 'POST' }); } catch (e) {}
+    }
+  }
+
+  window.pickCam = pickCam; window.start = start; window.stopAll = stopAll;
+})();
+</script>
+</body>
+</html>

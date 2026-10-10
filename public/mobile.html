@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Smart Glass — دوربین گوشی</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #0a0a0f; color: #e5e5ea; min-height: 100vh;
+    font-family: 'Segoe UI', Tahoma, system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 16px;
+  }
+  h1 { font-size: 18px; margin-bottom: 4px; }
+  .sub { color: #8a8a96; font-size: 12px; margin-bottom: 14px; text-align: center; }
+  .video-wrap {
+    position: relative; width: 100%; max-width: 480px; aspect-ratio: 4/3;
+    background: #000; border-radius: 14px; overflow: hidden;
+    border: 1px solid #26262e; box-shadow: 0 0 24px rgba(16,185,129,.12);
+    touch-action: none;
+  }
+  /* Real fullscreen: fill the viewport, no border radius */
+  .video-wrap:fullscreen {
+    width: 100vw; height: 100vh; max-width: none; aspect-ratio: auto;
+    border: 0; border-radius: 0; box-shadow: none;
+  }
+  canvas { width: 100%; height: 100%; display: block; background: #000; }
+  .badge {
+    position: absolute; top: 10px; right: 10px; padding: 4px 10px; border-radius: 999px;
+    font-size: 11px; background: rgba(10,10,15,.65); border: 1px solid #3d3d4a; z-index: 2;
+  }
+  .badge.ok { color: #34d399; border-color: rgba(16,185,129,.5); }
+  .badge.bad { color: #f87171; }
+  .faces-badge {
+    position: absolute; top: 10px; left: 10px; padding: 4px 10px; border-radius: 999px;
+    font-size: 11px; background: rgba(10,10,15,.65); border: 1px solid #3d3d4a;
+    color: #93c5fd; z-index: 2;
+  }
+  .fs-btn {
+    position: absolute; bottom: 10px; left: 10px; z-index: 3;
+    width: 38px; height: 38px; border-radius: 10px;
+    background: rgba(10,10,15,.65); border: 1px solid #3d3d4a; color: #e5e5ea;
+    font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; padding: 0;
+  }
+  .zoom {
+    position: absolute; bottom: 10px; right: 10px; z-index: 3;
+    display: none; flex-direction: row; gap: 8px; align-items: center;
+  }
+  .zoom.show { display: flex; }
+  .zoom button {
+    width: 42px; height: 42px; border-radius: 999px; padding: 0; margin: 0;
+    font-size: 20px; font-weight: 700; line-height: 1;
+    background: rgba(10,10,15,.65); border: 1px solid #3d3d4a; color: #e5e5ea;
+  }
+  .zoom .zval {
+    min-width: 44px; text-align: center; font-size: 12px; color: #9ca3af;
+    background: rgba(10,10,15,.65); border: 1px solid #3d3d4a; border-radius: 999px; padding: 5px 8px;
+  }
+  .status { margin: 12px 0 6px; font-size: 13px; color: #9ca3af; text-align: center; min-height: 18px; }
+  .status b { color: #e5e5ea; }
+  .row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
+  button {
+    padding: 12px 20px; border-radius: 12px; border: 1px solid #2d2d3a;
+    background: #17171e; color: #e5e5ea; font-size: 15px; font-family: inherit;
+  }
+  button:active { transform: scale(.97); }
+  button.primary { background: #059669; border-color: #059669; color: #fff; font-weight: 600; }
+  button.stop { background: #7f1d1d; border-color: #b91c1c; color: #fee2e2; }
+  button[disabled] { opacity: .45; }
+  .cam-toggle { display: flex; border: 1px solid #2d2d3a; border-radius: 12px; overflow: hidden; margin-top: 12px; }
+  .cam-toggle button { border: 0; border-radius: 0; background: transparent; padding: 12px 18px; }
+  .cam-toggle button.active { background: #059669; color: #fff; font-weight: 600; }
+  .recognized { width: 100%; max-width: 480px; margin-top: 16px; }
+  .recognized h2 { font-size: 13px; color: #9ca3af; margin-bottom: 8px; }
+  .rec-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    background: #14141b; border: 1px solid #26262e; border-radius: 10px; margin-bottom: 6px;
+  }
+  .rec-item .avatar {
+    width: 34px; height: 34px; border-radius: 999px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: #fff; background: #0284c7;
+  }
+  .rec-item.vip .avatar { background: #ca8a04; color: #000; }
+  .rec-item.employee .avatar { background: #059669; }
+  .rec-item .who { flex: 1; min-width: 0; }
+  .rec-item .who .name { font-size: 14px; font-weight: 600; color: #e5e5ea; }
+  .rec-item .who .code { font-size: 11px; color: #6b7280; font-family: monospace; }
+  .rec-item .sim { font-size: 12px; color: #34d399; font-weight: 600; }
+  .empty-rec { text-align: center; color: #4b5563; font-size: 12px; padding: 14px; }
+  .err { color: #f87171; font-size: 12.5px; margin-top: 8px; text-align: center; max-width: 460px; line-height: 1.8; }
+  .insecure {
+    display: none; margin: 10px 0; max-width: 480px; width: 100%;
+    background: #451a03; border: 1px solid #b45309; border-radius: 12px;
+    padding: 12px 14px; font-size: 12.5px; color: #fcd34d; line-height: 2;
+  }
+  .insecure code { direction: ltr; unicode-bidi: embed; color: #fde68a; background: rgba(0,0,0,.35); padding: 1px 6px; border-radius: 6px; font-size: 11.5px; }
+  @media (min-width: 640px) {
+    h1 { font-size: 20px; }
+    .recognized { max-width: 640px; }
+    .video-wrap { max-width: 640px; }
+  }
+  @media (max-width: 380px) {
+    body { padding: 10px; }
+    .cam-toggle button { padding: 10px 12px; font-size: 13px; }
+    .row button { padding: 10px 14px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+  <h1 id="pageTitle">دوربین گوشی — Smart Glass</h1>
+  <p class="sub" id="pageSub">کادر و اطلاعات افراد، مستقیماً روی تصویر دوربین رسم می‌شود</p>
+
+  <div class="video-wrap" id="videoWrap">
+    <canvas id="cv"></canvas>
+    <span id="badge" class="badge">غیرفعال</span>
+    <span id="buildTag" title="نسخهٔ اجراشده — برای تأیید آپلود جدید"
+          style="position:absolute;top:6px;left:50%;transform:translateX(-50%);font-size:10px;color:#6b7280;background:rgba(10,10,15,.55);padding:2px 8px;border-radius:8px;z-index:5">v11</span>
+    <span id="facesBadge" class="faces-badge" style="display:none">👤 0</span>
+    <button id="btnFs" class="fs-btn" title="تمام صفحه">⛶</button>
+    <div id="zoomCtl" class="zoom">
+      <button id="btnZoomOut" title="کوچک‌نمایی">−</button>
+      <span class="zval" id="zoomVal">1.0×</span>
+      <button id="btnZoomIn" title="بزرگ‌نمایی">+</button>
+    </div>
+  </div>
+
+  <p class="status" id="status">دوربین را روشن کنید</p>
+
+  <div class="cam-toggle">
+    <button id="btnFront" class="active" onclick="pickCam('front')">🤳 جلو (سلفی)</button>
+    <button id="btnBack" onclick="pickCam('back')">📷 عقب</button>
+    <button id="btnLaptop" onclick="pickCam('laptop')">💻 لپ‌تاپ</button>
+  </div>
+
+  <div class="row">
+    <button id="btnStart" class="primary" onclick="start()">روشن کردن</button>
+    <button id="btnStop" class="stop" onclick="stopAll()" disabled>توقف</button>
+  </div>
+
+  <div class="recognized">
+    <h2>افراد شناسایی‌شده (زنده)</h2>
+    <div id="recList"><p class="empty-rec">هنوز کسی شناسایی نشده</p></div>
+  </div>
+
+  <p class="err" id="err"></p>
+
+  <div class="insecure" id="insecure">
+    ⚠️ مرورگر فقط روی HTTPS اجازه دوربین می‌دهد. این صفحه را از آدرس HTTPS سایت باز کنید
+    (<code id="siteHint"></code>) یا در تنظیمات مرورگر به این آدرس اجازه دوربین بدهید:
+    <code id="originHint"></code>
+  </div>
+
+<script>
+(function () {
+  // Per-DEVICE session id: isolates cameras/trackers on the engine so two
+  // devices never see each other's subjects and never fight over one frame
+  // queue (the 409 ping-pong). Stable per tab via sessionStorage; falls back
+  // to a fresh random id when storage is unavailable (private mode).
+  var SESSION = (function () {
+    try {
+      var s = sessionStorage.getItem('sg_session');
+      if (s) return s;
+      s = 'd' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      sessionStorage.setItem('sg_session', s);
+      return s;
+    } catch (e) { return 'd' + Math.random().toString(36).slice(2, 10); }
+  })();
+
+  // Deploy-safe endpoints: on the HTTPS site (faceapp.ariyabodmenu.ir) the
+  // server proxies /api/* to the engine, so relative URLs are used. On pure
+  // HTTP LAN setups the engine runs on port 8003 of the same host. No
+  // hardcoded IP is ever embedded.
+  var PC = location.protocol === 'https:' ? ''
+    : (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+    ? 'http://127.0.0.1:8003' : ('http://' + location.hostname + ':8003');
+
+  if (!window.isSecureContext) {
+    document.getElementById('insecure').style.display = 'block';
+    document.getElementById('siteHint').textContent =
+      location.protocol + '//' + location.host + '/mobile.html';
+    document.getElementById('originHint').textContent = location.origin;
+  }
+
+  var video = document.createElement('video');   // offscreen source element
+  video.setAttribute('autoplay', ''); video.setAttribute('playsinline', ''); video.muted = true;
+  var wrap = document.getElementById('videoWrap');
+  var cv = document.getElementById('cv');
+  var cx = cv.getContext('2d');
+  var badge = document.getElementById('badge');
+  var facesBadge = document.getElementById('facesBadge');
+  var statusEl = document.getElementById('status');
+  var errEl = document.getElementById('err');
+  var recList = document.getElementById('recList');
+  var btnStart = document.getElementById('btnStart');
+  var btnStop = document.getElementById('btnStop');
+  var btnFront = document.getElementById('btnFront');
+  var btnBack = document.getElementById('btnBack');
+  var btnLaptop = document.getElementById('btnLaptop');
+  var btnFs = document.getElementById('btnFs');
+  var zoomCtl = document.getElementById('zoomCtl');
+  var btnZoomIn = document.getElementById('btnZoomIn');
+  var btnZoomOut = document.getElementById('btnZoomOut');
+  var zoomVal = document.getElementById('zoomVal');
+
+  var stream = null, camTrack = null, facing = 'front', sending = false, timer = null;
+  var pollTimer = null, frames = 0, tracks = [], drawing = false;
+  var fpsTimer = null, lastEngineFps = 0;
+  var pushBusy = false;   // one upload in flight at a time (no queuing lag)
+
+  // Smoothed tracking state: track_id -> {cx,cy,hw,hh,vx,vy,seen,info}
+  // The box is EXTRAPOLATED with the person's velocity between polls so it
+  // follows fast movement instead of jumping every 100ms.
+  var smooth = {}, lastPollTs = 0, pollBusy = false;
+  var statusTimer = null;
+  var staleUiCleared = false;   // one-shot flag: cleared the HUD when polls stalled
+
+  // getUserMedia facingMode values are 'user' (front) / 'environment' (back).
+  // 'laptop' = desktop webcam (no facingMode constraint; the laptop camera is
+  // just the default device) — lets the dashboard operator test on a PC too.
+  var FACING_MODE = { front: 'user', back: 'environment', laptop: null };
+  var CAT_COLORS = { vip: '#facc15', employee: '#34d399', guest: '#60a5fa', unknown: '#f87171' };
+  // The engine resizes pushes aspect-preserving (e.g. 16:9 -> 640x360) and
+  // reports the real processed size via /api/tracks + /api/camera/status.
+  // The processed frame IS the full pushed image (no padding), so mapping
+  // back to the canvas is a pure scale: canvas / proc. Without the real
+  // proc size the old code assumed 640x480 and boxes drifted off the face.
+  var procW = 640, procH = 480;
+
+  function setBadge(ok, text) {
+    badge.textContent = text;
+    badge.className = 'badge ' + (ok ? 'ok' : 'bad');
+  }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  // ---- fullscreen ---------------------------------------------------------
+  function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement; }
+  function toggleFullscreen() {
+    if (fsElement()) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      var req = wrap.requestFullscreen || wrap.webkitRequestFullscreen;
+      if (req) req.call(wrap);
+      else errEl.textContent = 'مرورگر شما حالت تمام‌صفحه را پشتیبانی نمی‌کند.';
+    }
+  }
+  btnFs.addEventListener('click', toggleFullscreen);
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (ev) {
+    document.addEventListener(ev, function () {
+      btnFs.textContent = fsElement() ? '✕' : '⛶';
+    });
+  });
+
+  // ---- zoom ----------------------------------------------------------------
+  // 1) Native optical zoom when the browser exposes track capabilities zoom
+  //    (Android Chrome; iPhone does not) via applyConstraints.
+  // 2) Digital fallback: scale/crop the canvas AND the pushed frame the same
+  //    way, so recognition sees exactly what the user sees on screen.
+  var zoom = { min: 1, max: 1, step: 0.1, val: 1, native: false };
+
+  function updateZoomUI() {
+    zoomVal.textContent = zoom.val.toFixed(1) + '×';
+    btnZoomOut.disabled = zoom.val <= zoom.min + 1e-6;
+    btnZoomIn.disabled = zoom.val >= zoom.max - 1e-6;
+  }
+  function setZoom(v) {
+    v = Math.max(zoom.min, Math.min(zoom.max, v));
+    if (Math.abs(v - zoom.val) < 1e-6) return;
+    zoom.val = v;
+    if (zoom.native && camTrack) {
+      camTrack.applyConstraints({ advanced: [{ zoom: v }] }).catch(function () {});
+    }
+    updateZoomUI();
+  }
+  btnZoomIn.addEventListener('click', function () { setZoom(zoom.val + zoom.step); });
+  btnZoomOut.addEventListener('click', function () { setZoom(zoom.val - zoom.step); });
+
+  // Double-tap / wheel zoom (mobile pinch-zoom is blocked by user-scalable=no;
+  // provide wheel + dblclick on desktop for convenience).
+  wrap.addEventListener('dblclick', function () { setZoom(zoom.val >= zoom.max ? zoom.min : zoom.val + zoom.step * 5); });
+  wrap.addEventListener('wheel', function (e) {
+    if (!sending) return;
+    e.preventDefault();
+    setZoom(zoom.val + (e.deltaY < 0 ? zoom.step : -zoom.step));
+  }, { passive: false });
+
+  function probeZoomCaps() {
+    zoom.native = false; zoom.min = 1; zoom.max = 1; zoom.val = 1;
+    if (!camTrack || typeof camTrack.getCapabilities !== 'function') { showZoomUI(false); return; }
+    var caps = camTrack.getCapabilities() || {};
+    if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+      zoom.native = true;
+      zoom.min = caps.zoom.min;
+      zoom.max = Math.min(caps.zoom.max, caps.zoom.min + 6);   // keep UI sane
+      zoom.step = caps.zoom.step || 0.1;
+      zoom.val = (camTrack.getSettings && camTrack.getSettings().zoom) || zoom.min;
+      showZoomUI(true);
+    } else {
+      // Digital zoom fallback: 1.0x .. 3.0x in 0.1 steps
+      zoom.native = false; zoom.min = 1; zoom.max = 3; zoom.step = 0.1; zoom.val = 1;
+      showZoomUI(true);
+    }
+    updateZoomUI();
+  }
+  function showZoomUI(show) { zoomCtl.className = 'zoom' + (show ? ' show' : ''); }
+
+  // ---- camera ---------------------------------------------------------------
+  async function openCamera(f) {
+    var base = (FACING_MODE[f] === null)
+      ? { width: { ideal: 640 }, height: { ideal: 480 } }
+      : { facingMode: FACING_MODE[f], width: { ideal: 640 }, height: { ideal: 480 } };
+    var attempts = [
+      { video: Object.assign({}, base), audio: false },
+      f === 'laptop' ? { video: true, audio: false }
+                     : { video: { facingMode: { ideal: FACING_MODE[f] } }, audio: false },
+      { video: true, audio: false }
+    ];
+    var lastErr = null;
+    for (var i = 0; i < attempts.length; i++) {
+      try { return await navigator.mediaDevices.getUserMedia(attempts[i]); }
+      catch (e) { lastErr = e; }
+    }
+    throw lastErr;
+  }
+
+  async function pickCam(f) {
+    if (f === facing && stream) return;
+    facing = f;
+    btnFront.classList.toggle('active', f === 'front');
+    btnBack.classList.toggle('active', f === 'back');
+    btnLaptop.classList.toggle('active', f === 'laptop');
+    // Clear stale identity data IMMEDIATELY (old tracks/names belong to the
+    // previous camera; the engine also resets its tracker on start). Without
+    // this the old subject's info stayed on screen during the switch.
+    tracks = []; smooth = {}; recList.innerHTML = '<p class="empty-rec">در حال تعویض دوربین…</p>';
+    // Fresh session: the engine reports the real proc size only after the first
+    // pushed frame is processed. Reset to defaults so boxes from the PREVIOUS
+    // camera aspect (front 480x360 vs back 640x480) never map onto the new one.
+    procW = 640; procH = 480; lastPollTs = 0; staleUiCleared = false;
+    if (stream) {
+      stopLocalVideo();
+      statusEl.textContent = 'تعویض دوربین…';
+      await sleep(350);
+      if (sending) await start();
+    }
+  }
+
+  function stopLocalVideo() {
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    camTrack = null;
+    video.srcObject = null;
+  }
+
+  async function start() {
+    errEl.textContent = '';
+    btnStart.disabled = true;
+    try {
+      statusEl.textContent = 'درخواست دسترسی دوربین…';
+      stream = await openCamera(facing);
+      camTrack = stream.getVideoTracks()[0] || null;
+      video.srcObject = stream;
+      await video.play().catch(function () {});
+      probeZoomCaps();
+
+      // Fit the canvas (and its box) to the real camera aspect so nothing is cropped
+      await new Promise(function (res) {
+        if (video.videoWidth) return res();
+        video.onloadedmetadata = res;
+      });
+      cv.width = video.videoWidth || 640;
+      cv.height = video.videoHeight || 480;
+      wrap.style.aspectRatio = cv.width + ' / ' + cv.height;
+
+      // Tell the engine to start THIS device's session (push mode, per-device
+      // tracker/queue: multiple devices can run at the same time)
+      var r = await fetch(PC + '/api/camera/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ camera_id: 0, push_mode: true, facing: facing, session_id: SESSION })
+      });
+      if (!r.ok) {
+        var body = null;
+        try { body = await r.json(); } catch (e) {}
+        throw new Error((body && body.detail) ? body.detail : ('camera/start: HTTP ' + r.status));
+      }
+
+      sending = true; frames = 0;
+      timer = setInterval(pushOnce, 68);   // ~14.7 fps: +17% track refresh vs 80ms.
+                                           // The server consumes only the LATEST frame,
+                                           // so surplus pushes are free - they just raise
+                                           // freshness odds between engine passes.
+      btnStop.disabled = false;
+      setBadge(true, 'در حال ارسال');
+      var camName = facing === 'front' ? 'جلو' : (facing === 'back' ? 'عقب' : 'لپ‌تاپ');
+      statusEl.innerHTML = 'دوربین <b>' + camName + '</b> فعال — نقطه و مشخصات روی تصویر رسم می‌شود';
+
+      if (!drawing) { drawing = true; requestAnimationFrame(drawLoop); }
+      startPolling();
+    } catch (e) {
+      var name = (e && e.name) ? e.name : 'Error';
+      errEl.textContent = 'خطا [' + name + ']: ' + (e.message || e);
+      if (name === 'NotAllowedError') errEl.textContent += ' — دسترسی دوربین در تنظیمات سافاری رد شده است.';
+      if (name === 'NotFoundError') errEl.textContent += ' — دوربین یافت نشد.';
+      statusEl.textContent = 'شکست در شروع';
+      btnStart.disabled = false;
+      setBadge(false, 'خطا');
+    }
+  }
+
+  async function pushOnce() {
+    if (!sending || pushBusy || !video.videoWidth) return;
+    pushBusy = true;                       // in-flight guard: if the network is
+    try {                                  // slow, SKIP instead of stacking old
+      var w = Math.min(480, video.videoWidth), h = Math.round(w * video.videoHeight / video.videoWidth);
+      var c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      var g = c.getContext('2d');
+      // NOTE: the raw getUserMedia stream is already correct (mirroring is only
+      // a CSS display effect). Mirroring AGAIN here corrupted recognition:
+      // the engine saw a flipped face (similarity 0.02-0.18 => everyone "unknown"
+      // or one shared name). Send the true image.
+      //
+      // Digital zoom: draw the CENTER crop (1/zoom) scaled up to the full frame,
+      // so the pushed frame matches exactly what the on-screen canvas shows.
+      var zw = w / zoom.val, zh = h / zoom.val;
+      var zx = (w - zw) / 2, zy = (h - zh) / 2;
+      g.drawImage(video, zx, zy, zw, zh, 0, 0, w, h);
+      // q0.55: ~10% smaller upload -> shorter pipeline latency (lower age_ms)
+      // with no recognition cost (the engine downscales to det_size anyway).
+      var blob = await new Promise(function (res) { c.toBlob(res, 'image/jpeg', 0.55); });
+      if (!blob) return;
+      var r = await fetch(PC + '/api/frame?session_id=' + encodeURIComponent(SESSION), { method: 'POST', body: blob });
+      if (r.ok) {
+        frames++; setBadge(true, 'ارسال: ' + frames + ' فریم');
+        // COMPOSITE RESPONSE: the engine returns the current tracks with every
+        // push ack, so boxes refresh at push rate (12.5 Hz) without a second
+        // Laravel round trip. Halves the proxy request rate and the box is as
+        // fresh as the frame that was just analyzed.
+        try {
+          var j = await r.json();
+          if (j && j.tracks) {
+            tracks = j.tracks;
+            if (j.proc_size && j.proc_size[0] > 0) { procW = j.proc_size[0]; procH = j.proc_size[1]; }
+            updateSmooth();
+            facesBadge.textContent = '👤 ' + (j.count || 0) + ' چهره';
+          }
+        } catch (e) { /* old engine build: /api/tracks poll still covers it */ }
+      }
+      else if (r.status === 409) {
+        await fetch(PC + '/api/camera/start', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ camera_id: 0, push_mode: true, facing: facing, session_id: SESSION })
+        });
+      } else { setBadge(false, 'خطای ارسال ' + r.status); }
+    } catch (e) { setBadge(false, 'قطع ارتباط با سرور'); }
+    finally { pushBusy = false; }
+  }
+
+  // ---- overlay drawing: dot on each face + info beside it --------------
+  function roundRect(x, y, w, h, r) {
+    cx.beginPath();
+    cx.moveTo(x + r, y);
+    cx.arcTo(x + w, y, x + w, y + h, r);
+    cx.arcTo(x + w, y + h, x, y + h, r);
+    cx.arcTo(x, y + h, x, y, r);
+    cx.arcTo(x, y, x + w, y, r);
+    cx.closePath();
+  }
+
+  function drawLoop() {
+    if (!drawing) return;
+    requestAnimationFrame(drawLoop);
+
+    if (!video.videoWidth) return;
+    var W = cv.width, H = cv.height;
+
+    cx.save();
+    if (facing === 'front' || facing === 'laptop') { cx.translate(W, 0); cx.scale(-1, 1); }  // selfie/laptop mirror view
+    // ALWAYS apply the same center-crop as the pushed frame (even for native
+    // optical zoom): the push side crops unconditionally, so if the preview
+    // skipped the crop the engine saw a ~2x tighter image than displayed and
+    // every box landed OFF the face (right-offset bug on Android, whose
+    // cameras expose the native zoom capability). What you see == what the
+    // engine sees, 1:1.
+    var zw = W / zoom.val, zh = H / zoom.val;
+    var zx = (W - zw) / 2, zy = (H - zh) / 2;
+    cx.drawImage(video, zx, zy, zw, zh, 0, 0, W, H);
+    cx.restore();
+
+    // HUD like the webcam view
+    cx.font = 'bold 16px Segoe UI, Tahoma, sans-serif';
+    cx.fillStyle = 'rgba(10,10,15,.55)';
+    roundRect(10, 10, 118, 30, 8); cx.fill();
+    cx.fillStyle = '#34d399';
+    cx.textAlign = 'left'; cx.textBaseline = 'middle';
+    cx.fillText('SMART GLASS', 22, 26);
+
+    var nowTs = performance.now();
+    // Freshness guard: never draw boxes/cards older than ~1.2 s. If polling
+    // stalls (network drop, engine restart), the last tracks[] used to stay
+    // on screen forever - the GHOST BOX + stale identity card floating over
+    // an empty scene (back-camera bug). The engine's own 3 s track TTL bounds
+    // server-side ghosts; this bounds the client side.
+    if (!lastPollTs || nowTs - lastPollTs > 1200) {
+      if (!staleUiCleared) {
+        staleUiCleared = true;
+        recList.innerHTML = '<p class="empty-rec">اتصال ضعیف — در حال دریافت…</p>';
+        facesBadge.textContent = '👤 —';
+      }
+      return;
+    }
+    staleUiCleared = false;
+    for (var id in smooth) {
+      var s = smooth[id], t = s.info;
+      // Extrapolate with velocity, CAPPED at 150ms: covers the push->draw gap
+      // so the dot keeps gliding between data arrivals, while the cap still
+      // stops runaway overshoot if data stalls (staleness guard above clears
+      // everything after 1.2s anyway).
+      var dtDraw = Math.min(0.15, (nowTs - lastPollTs) / 1000);
+      var ecx = s.cx + s.vx * dtDraw;
+      var ecy = s.cy + s.vy * dtDraw;
+      // Engine processed frame (procW x procH, aspect-preserving resize of
+      // the pushed frame) -> canvas space. Proc area and pushed frame share
+      // the camera aspect, so scale = canvasWidth / procWidth exactly. This
+      // fixes boxes drifting off the face when the phone streams 16:9
+      // (proc 640x360) while proc_size was wrongly assumed 640x480.
+      var sx = W / procW, sy = H / procH;
+      // Guard against a wrong/short-lived proc_size (session just switched,
+      // stale engine build): if the reported aspect disagrees with the canvas,
+      // fall back to UNIFORM scaling. Boxes may be slightly over/under-sized
+      // for a poll or two, but they stay glued to the FACE instead of sliding
+      // sideways (the classic right-offset bug).
+      if (Math.abs(sy - sx) / sx > 0.02) sy = sx;
+      var x1 = (ecx - s.hw) * sx, y1 = (ecy - s.hh) * sy;
+      var x2 = (ecx + s.hw) * sx, y2 = (ecy + s.hh) * sy;
+      if (facing === 'front' || facing === 'laptop') {  // mirror x to match the mirrored preview
+        var nx1 = W - x2, nx2 = W - x1;
+        x1 = nx1; x2 = nx2;
+      }
+      var color = CAT_COLORS[t.category] || CAT_COLORS.unknown;
+
+      // DOT instead of a box: a small filled dot + a thin ring glued to the
+      // DETECTED face center. The box occluded the subject and lagged behind
+      // at low FPS; the dot is unobtrusive and follows the motion 1:1.
+      var fcx = (x1 + x2) / 2, fcy = (y1 + y2) / 2;
+      var dotR = Math.max(6, Math.min(12, (x2 - x1) * 0.16));
+
+      cx.beginPath();
+      cx.arc(fcx, fcy, dotR, 0, Math.PI * 2);
+      cx.fillStyle = color;
+      cx.fill();
+      cx.beginPath();
+      cx.arc(fcx, fcy, dotR + 5, 0, Math.PI * 2);
+      cx.strokeStyle = color;
+      cx.lineWidth = 1.5;
+      cx.globalAlpha = 0.55;
+      cx.stroke();
+      cx.globalAlpha = 1;
+
+      // info card beside the dot (like the webcam overlay)
+      var lines = [];
+      if (t.full_name) {
+        lines.push(t.full_name);
+        if (t.national_code) lines.push('کد ملی: ' + t.national_code);
+        if (t.similarity) lines.push('مشابهت: ' + Math.round(t.similarity * 100) + '%');
+      } else {
+        lines.push('ناشناس');
+      }
+
+      cx.font = 'bold 15px Segoe UI, Tahoma, sans-serif';
+      var tw = 0;
+      for (var j = 0; j < lines.length; j++) tw = Math.max(tw, cx.measureText(lines[j]).width);
+      if (lines.length > 1) { cx.font = '12px Segoe UI, Tahoma, sans-serif'; for (j = 1; j < lines.length; j++) tw = Math.max(tw, cx.measureText(lines[j]).width); }
+
+      var pad = 8, lineH = (lines.length > 1 ? 26 : 24);
+      var bw = tw + pad * 2, bh = lines.length * lineH + pad * 2 - 4;
+      // prefer the side with more free space (relative to the dot)
+      var bx = (fcx + bw + 22 < W) ? fcx + 22 : Math.max(6, fcx - bw - 22);
+      var by = Math.max(6, Math.min(fcy - bh / 2, H - bh - 6));
+
+      cx.fillStyle = 'rgba(10,10,15,.78)';
+      roundRect(bx, by, bw, bh, 8); cx.fill();
+      cx.strokeStyle = color; cx.lineWidth = 1.5;
+      roundRect(bx, by, bw, bh, 8); cx.stroke();
+
+      cx.textAlign = 'right';
+      for (j = 0; j < lines.length; j++) {
+        var yy = by + pad + lineH * j + lineH / 2 - 2;
+        if (j === 0) {
+          cx.font = 'bold 15px Segoe UI, Tahoma, sans-serif';
+          cx.fillStyle = '#f3f4f6';
+        } else {
+          cx.font = '12px Segoe UI, Tahoma, sans-serif';
+          cx.fillStyle = j === lines.length - 1 && t.similarity ? '#34d399' : '#9ca3af';
+        }
+        cx.fillText(lines[j], bx + bw - pad, yy);
+      }
+      cx.textAlign = 'left';
+    }
+  }
+
+  // ---- tracks polling ----------------------------------------------------
+  function startPolling() {
+    facesBadge.style.display = 'inline-block';
+    if (pollTimer) clearInterval(pollTimer);
+    // Fallback only: the composite /api/frame response already carries fresh
+    // tracks at push rate (12.5 Hz), so the standalone poll runs at 3 Hz just
+    // to cover old engine builds and stalled pushes.
+    pollTracks(); pollTimer = setInterval(pollTracks, 300);   // 3.3 Hz fallback
+    // Fallback proc-size source: /api/tracks may not carry proc_size on an
+    // older engine build; /api/camera/status does. Refresh every 3 s.
+    if (statusTimer) clearInterval(statusTimer);
+    fetchStatus(); statusTimer = setInterval(fetchStatus, 3000);
+    startFpsReadout();
+  }
+
+  async function fetchStatus() {
+    try {
+      var r = await fetch(PC + '/api/camera/status?session_id=' + encodeURIComponent(SESSION));
+      if (!r.ok) return;
+      var st = await r.json();
+      if (st.proc_size && st.proc_size[0] > 0) {
+        procW = st.proc_size[0]; procH = st.proc_size[1];
+      }
+      lastEngineFps = st.fps || 0;
+    } catch (e) { /* transient */ }
+  }
+
+  // Live engine-FPS readout in the status line (transparency: the user sees
+  // exactly how fast the server is analyzing, separate from display smoothness).
+  function startFpsReadout() {
+    if (fpsTimer) clearInterval(fpsTimer);
+    fpsTimer = setInterval(function () {
+      if (!sending) return;
+      var base = statusEl.innerHTML.split('— سرعت پردازش:')[0];
+      if (lastEngineFps > 0) {
+        statusEl.innerHTML = base + ' — سرعت پردازش: <b>' + lastEngineFps.toFixed(1) + ' فریم/ث</b>';
+      }
+    }, 1000);
+  }
+
+  function updateSmooth() {
+    var now = performance.now();
+    var dt = lastPollTs ? Math.min(0.5, (now - lastPollTs) / 1000) : 0.1;
+    lastPollTs = now;
+    var seen = {};
+    for (var i = 0; i < tracks.length; i++) {
+      var t = tracks[i];
+      // Prefer the RAW detector box: display_bbox is padded 30% top vs 4%
+      // bottom, so its center floats ABOVE the face. The raw box centers on
+      // the detection itself -> the subject sits centered in the drawn box
+      // and the box follows every direction of movement 1:1.
+      var b = (t.raw_bbox && t.raw_bbox.length === 4) ? t.raw_bbox : t.bbox;
+      seen[t.track_id] = 1;
+      var cx_ = (b[0] + b[2]) / 2, cy_ = (b[1] + b[3]) / 2;
+      var hw = (b[2] - b[0]) / 2, hh = (b[3] - b[1]) / 2;
+      // LATENCY CANCELLATION: the engine tags every track with age_ms (how
+      // old the detection is) and vx/vy (proc px/s). Riding the box forward
+      // by age*velocity puts it where the face IS NOW, not where it was when
+      // the frame was captured - this removes the push+process+poll pipeline
+      // lag (the 'box trails the subject by ~2s' bug) from the overlay.
+      // Old engine builds without these fields: prediction = 0 (no change).
+      var age = Math.min(0.5, (t.age_ms || 0) / 1000);
+      var predX = cx_ + (t.vx || 0) * age;
+      var predY = cy_ + (t.vy || 0) * age;
+      var s = smooth[t.track_id];
+      if (!s) {
+        smooth[t.track_id] = { cx: predX, cy: predY, hw: hw, hh: hh, vx: t.vx || 0, vy: t.vy || 0,
+                               rawCx: cx_, rawCy: cy_, seen: now, info: t };
+        continue;
+      }
+      if (dt > 0) {   // smoothed per-axis velocity (engine px/s) on RAW centers
+        s.vx = 0.5 * s.vx + 0.5 * (cx_ - s.rawCx) / dt;   // 50/50 blend: reacts ~2x faster to direction changes
+        s.vy = 0.5 * s.vy + 0.5 * (cy_ - s.rawCy) / dt;
+      }
+      s.rawCx = cx_; s.rawCy = cy_;
+      s.cx = predX; s.cy = predY; s.hw = hw; s.hh = hh;
+      s.seen = now; s.info = t;
+    }
+    for (var id in smooth) {
+      if (!seen[id] && now - smooth[id].seen > 350) delete smooth[id];
+    }
+  }
+
+  async function pollTracks() {
+    if (pollBusy) return;
+    pollBusy = true;
+    try {
+      var r = await fetch(PC + '/api/tracks?session_id=' + encodeURIComponent(SESSION));
+      if (!r.ok) return;
+      var data = await r.json();
+      tracks = data.tracks || [];
+      if (data.proc_size && data.proc_size[0] > 0) {
+        procW = data.proc_size[0]; procH = data.proc_size[1];
+      }
+      updateSmooth();
+      facesBadge.textContent = '👤 ' + (data.count || 0) + ' چهره';
+
+      if (!tracks.length) {
+        recList.innerHTML = '<p class="empty-rec">هنوز کسی شناسایی نشده</p>';
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < tracks.length; i++) {
+        var t = tracks[i], cat = t.category || 'guest';
+        var name = t.full_name || 'ناشناس';
+        var sim = t.similarity ? Math.round(t.similarity * 100) + '%' : '';
+        html += '<div class="rec-item ' + cat + '">' +
+          '<div class="avatar">' + name.charAt(0) + '</div>' +
+          '<div class="who"><div class="name">' + name + '</div>' +
+          '<div class="code">' + (t.national_code || '—') + '</div></div>' +
+          '<div class="sim">' + sim + '</div></div>';
+      }
+      recList.innerHTML = html;
+    } catch (e) { /* transient */ }
+    finally { pollBusy = false; }
+  }
+
+  async function stopAll(silent) {
+    sending = false;
+    drawing = false;
+    if (timer) { clearInterval(timer); timer = null; }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+    if (fpsTimer) { clearInterval(fpsTimer); fpsTimer = null; }
+    stopLocalVideo();
+    tracks = []; smooth = {}; lastPollTs = 0; staleUiCleared = false;
+    showZoomUI(false);
+    cx.clearRect(0, 0, cv.width, cv.height);
+    facesBadge.style.display = 'none';
+    btnStop.disabled = true;
+    btnStart.disabled = false;
+    setBadge(false, 'غیرفعال');
+    statusEl.textContent = 'متوقف شد';
+    recList.innerHTML = '<p class="empty-rec">هنوز کسی شناسایی نشده</p>';
+    if (!silent) {
+      try { await fetch(PC + '/api/camera/stop?session_id=' + encodeURIComponent(SESSION), { method: 'POST' }); } catch (e) {}
+    }
+  }
+
+  window.pickCam = pickCam; window.start = start; window.stopAll = stopAll;
+})();
+</script>
+</body>
+</html>
